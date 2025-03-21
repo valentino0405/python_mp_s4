@@ -8,7 +8,7 @@ from PIL import Image, ImageTk
 import time
 from fuzzywuzzy import process
 
-# Video Path - Make sure this path is correct
+# Video Path
 VIDEO_PATH = "nanimation.mp4"
 
 # Initialize TTS Engine
@@ -17,7 +17,7 @@ engine = pyttsx3.init()
 # Global flag
 is_listening = False
 
-# Commands Dictionary (kept the same as your original)
+# Commands Dictionary
 commands = {
     "open youtube": "https://www.youtube.com",
     "open google": "https://www.google.com",
@@ -100,7 +100,7 @@ def listen():
         is_listening = False
 
 
-# Play Video Animation
+# Play Video Animation with preserved aspect ratio
 def play_video():
     cap = cv2.VideoCapture(VIDEO_PATH)
     if not cap.isOpened():
@@ -109,7 +109,11 @@ def play_video():
 
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    # Use the entire video instead of specific frames
+    # Get original video dimensions
+    original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    original_aspect_ratio = original_width / original_height
+
     while is_listening and cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -120,20 +124,34 @@ def play_video():
         # Process and display the frame
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        # Resize while maintaining aspect ratio
-        h, w = frame.shape[:2]
+        # Get current video display dimensions
         video_width = video_frame.winfo_width()
         video_height = video_frame.winfo_height()
 
-        # Calculate scaling factor
-        scale = min(video_width / w, video_height / h)
-        new_w = int(w * scale)
-        new_h = int(h * scale)
+        # Calculate the display size while preserving aspect ratio
+        display_height = int(video_height * 0.8)
+        display_width = int(display_height * original_aspect_ratio)
 
-        frame = cv2.resize(frame, (new_w, new_h))
+        # If calculated width exceeds available width, recalculate based on width
+        if display_width > video_width * 0.8:
+            display_width = int(video_width * 0.8)
+            display_height = int(display_width / original_aspect_ratio)
 
-        img = Image.fromarray(frame)
-        imgtk = ImageTk.PhotoImage(image=img)
+        # Resize frame while preserving aspect ratio
+        frame = cv2.resize(frame, (display_width, display_height))
+
+        # Create a black image with the size of the video frame
+        black_img = Image.new('RGB', (video_width, video_height), color='black')
+
+        # Paste the video frame in the center
+        x_offset = (video_width - display_width) // 2
+        y_offset = (video_height - display_height) // 2
+
+        frame_img = Image.fromarray(frame)
+        black_img.paste(frame_img, (x_offset, y_offset))
+
+        # Convert to PhotoImage
+        imgtk = ImageTk.PhotoImage(image=black_img)
         video_label.imgtk = imgtk
         video_label.configure(image=imgtk)
 
@@ -145,6 +163,18 @@ def play_video():
     cap.release()
 
 
+# Exit fullscreen with Escape key
+def exit_fullscreen(event=None):
+    root.attributes("-fullscreen", False)
+    root.geometry("800x600")
+
+
+# Toggle fullscreen with F11 key
+def toggle_fullscreen(event=None):
+    is_fullscreen = root.attributes("-fullscreen")
+    root.attributes("-fullscreen", not is_fullscreen)
+
+
 # Start Assistant
 def start_voice_assistant():
     if not is_listening:
@@ -154,25 +184,38 @@ def start_voice_assistant():
 # UI Setup
 root = tk.Tk()
 root.title("AI Assistant")
-root.geometry("800x600")
 root.configure(bg="#000000")
-root.minsize(600, 500)
+
+# Set to fullscreen
+root.attributes("-fullscreen", True)
 
 # Make window content responsive
 root.grid_rowconfigure(0, weight=1)
 root.grid_columnconfigure(0, weight=1)
 
-# Main frame
-main_frame = tk.Frame(root, bg="#000000")
-main_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
-main_frame.grid_rowconfigure(0, weight=3)
-main_frame.grid_rowconfigure(1, weight=1)
-main_frame.grid_rowconfigure(2, weight=1)
+# Add border frame
+border_frame = tk.Frame(root, bg="#000000", bd=2, relief="solid", highlightbackground="#333333", highlightthickness=2)
+border_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+border_frame.grid_rowconfigure(0, weight=1)
+border_frame.grid_columnconfigure(0, weight=1)
+
+# Main content frame inside the border
+main_frame = tk.Frame(border_frame, bg="#000000")
+main_frame.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+main_frame.grid_rowconfigure(0, weight=4)  # Video area
+main_frame.grid_rowconfigure(1, weight=1)  # Text area
 main_frame.grid_columnconfigure(0, weight=1)
 
+# Video frame with border
+video_outer_frame = tk.Frame(main_frame, bg="#000000", bd=1, relief="solid", highlightbackground="#333333",
+                             highlightthickness=1)
+video_outer_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+video_outer_frame.grid_rowconfigure(0, weight=1)
+video_outer_frame.grid_columnconfigure(0, weight=1)
+
 # Video frame
-video_frame = tk.Frame(main_frame, bg="#000000")
-video_frame.grid(row=0, column=0, sticky="nsew")
+video_frame = tk.Frame(video_outer_frame, bg="#000000")
+video_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 video_frame.grid_rowconfigure(0, weight=1)
 video_frame.grid_columnconfigure(0, weight=1)
 
@@ -180,30 +223,44 @@ video_frame.grid_columnconfigure(0, weight=1)
 video_label = tk.Label(video_frame, bg="#000000")
 video_label.grid(row=0, column=0, sticky="nsew")
 
+# Text frame with border
+text_outer_frame = tk.Frame(main_frame, bg="#000000", bd=1, relief="solid", highlightbackground="#333333",
+                            highlightthickness=1)
+text_outer_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+text_outer_frame.grid_rowconfigure(0, weight=1)
+text_outer_frame.grid_columnconfigure(0, weight=1)
+
+# Text frame
+text_frame = tk.Frame(text_outer_frame, bg="#000000")
+text_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+text_frame.grid_rowconfigure(0, weight=1)
+text_frame.grid_rowconfigure(1, weight=1)
+text_frame.grid_rowconfigure(2, weight=1)
+text_frame.grid_columnconfigure(0, weight=1)
+
 # Slogan label
 slogan_label = tk.Label(
-    main_frame,
+    text_frame,
     text="A NEW ERA OF INTELLIGENCE BEGINS NOW.",
-    font=("Consolas", 16, "bold"),
+    font=("Consolas", 18, "bold"),
     fg="#FFFFFF",
     bg="#000000"
 )
-slogan_label.grid(row=1, column=0, sticky="ew", pady=10)
+slogan_label.grid(row=0, column=0, sticky="s", pady=5)
 
 # Status label
 status_label = tk.Label(
-    main_frame,
+    text_frame,
     text="Waiting for command...",
-    font=("Consolas", 12),
+    font=("Consolas", 14),
     fg="#00FFFF",
     bg="#000000"
 )
-status_label.grid(row=2, column=0, sticky="ew", pady=5)
+status_label.grid(row=1, column=0, sticky="n", pady=5)
 
-# Listen Button in a separate frame for better positioning
-button_frame = tk.Frame(main_frame, bg="#000000")
-button_frame.grid(row=3, column=0, sticky="ew", pady=20)
-button_frame.grid_columnconfigure(0, weight=1)
+# Listen Button
+button_frame = tk.Frame(text_frame, bg="#000000")
+button_frame.grid(row=2, column=0, sticky="n", pady=10)
 
 
 # Listen Button Style
@@ -223,15 +280,19 @@ listen_button = tk.Button(
     bg="#000000",
     fg="#00FFFF",
     borderwidth=1,
-    relief="flat",
+    relief="solid",
     padx=20,
     pady=10,
     activebackground="#00FFFF",
     activeforeground="#000000"
 )
-listen_button.grid(row=0, column=0)
+listen_button.pack()
 listen_button.bind("<Enter>", on_enter)
 listen_button.bind("<Leave>", on_leave)
+
+# Keyboard bindings
+root.bind("<Escape>", exit_fullscreen)
+root.bind("<F11>", toggle_fullscreen)
 
 # Start GUI
 root.mainloop()
