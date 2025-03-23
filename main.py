@@ -7,6 +7,7 @@ import cv2
 from PIL import Image, ImageTk
 import time
 from fuzzywuzzy import process
+import mysql.connector
 
 # Video Path
 VIDEO_PATH = "nanimation.mp4"
@@ -16,6 +17,27 @@ engine = pyttsx3.init()
 
 # Global flag
 is_listening = False
+
+# MySQL Connection
+conn = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="Valentino5678$",
+    database="ai_assistant"
+)
+cursor = conn.cursor()
+
+# Create Table if not exists
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS conversation_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_input TEXT NOT NULL,
+        assistant_response TEXT NOT NULL,
+        website_opened TEXT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+""")
+conn.commit()
 
 # Commands Dictionary
 commands = {
@@ -52,6 +74,11 @@ commands = {
     "open youtube downloads": "https://www.youtube.com/feed/downloads",
 }
 
+# Log Conversation to Database
+def log_conversation(user_input, assistant_response, website_opened=None):
+    cursor.execute("INSERT INTO conversation_logs (user_input, assistant_response, website_opened) VALUES (%s, %s, %s)",
+                   (user_input, assistant_response, website_opened))
+    conn.commit()
 
 # Speak Function
 def speak(text):
@@ -60,18 +87,22 @@ def speak(text):
     engine.say(text)
     engine.runAndWait()
 
-
 # Process Commands
 def process_command(command):
     command = command.lower()
     best_match, score = process.extractOne(command, commands.keys())
     if score > 80:  # Adjust threshold if needed
         site_name = best_match.replace("open ", "").capitalize()
-        speak(f"Opening {site_name}")
+        response = f"Opening {site_name}"
+        speak(response)
         webbrowser.open(commands[best_match])
+        # Log to database
+        log_conversation(command, response, commands[best_match])
     else:
-        speak("Command not recognized. Please try again.")
-
+        response = "Command not recognized. Please try again."
+        speak(response)
+        # Log to database
+        log_conversation(command, response)
 
 # Listen for Voice Command
 def listen():
@@ -91,14 +122,19 @@ def listen():
             status_label.config(text=f"You said: {command}")
             process_command(command)
         except sr.UnknownValueError:
-            speak("Sorry, I didn't catch that.")
+            response = "Sorry, I didn't catch that."
+            speak(response)
+            log_conversation("Unknown", response)
         except sr.RequestError:
-            speak("There was an issue with the recognition service.")
+            response = "There was an issue with the recognition service."
+            speak(response)
+            log_conversation("Recognition Error", response)
         except Exception as e:
-            speak(f"An error occurred: {str(e)}")
+            response = f"An error occurred: {str(e)}"
+            speak(response)
+            log_conversation("System Error", response)
 
         is_listening = False
-
 
 # Play Video Animation with preserved aspect ratio
 def play_video():
@@ -162,24 +198,20 @@ def play_video():
     video_label.configure(image="")
     cap.release()
 
-
 # Exit fullscreen with Escape key
 def exit_fullscreen(event=None):
     root.attributes("-fullscreen", False)
     root.geometry("800x600")
-
 
 # Toggle fullscreen with F11 key
 def toggle_fullscreen(event=None):
     is_fullscreen = root.attributes("-fullscreen")
     root.attributes("-fullscreen", not is_fullscreen)
 
-
 # Start Assistant
 def start_voice_assistant():
     if not is_listening:
         threading.Thread(target=listen, daemon=True).start()
-
 
 # UI Setup
 root = tk.Tk()
@@ -262,15 +294,12 @@ status_label.grid(row=1, column=0, sticky="n", pady=5)
 button_frame = tk.Frame(text_frame, bg="#000000")
 button_frame.grid(row=2, column=0, sticky="n", pady=10)
 
-
 # Listen Button Style
 def on_enter(e):
     listen_button.config(bg="#00FFFF", fg="#000000")
 
-
 def on_leave(e):
     listen_button.config(bg="#000000", fg="#00FFFF")
-
 
 listen_button = tk.Button(
     button_frame,
@@ -295,4 +324,9 @@ root.bind("<Escape>", exit_fullscreen)
 root.bind("<F11>", toggle_fullscreen)
 
 # Start GUI
-root.mainloop()
+try:
+    root.mainloop()
+finally:
+    # Close DB Connection on Exit
+    cursor.close()
+    conn.close()
