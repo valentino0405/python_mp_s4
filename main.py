@@ -7,15 +7,25 @@ import cv2
 from PIL import Image, ImageTk
 import time
 from fuzzywuzzy import process
+import os
+import pygame
+import difflib
 
 # Video Path
 VIDEO_PATH = "nanimation.mp4"
 
+# Music Path (please replace with your actual music directory)
+MUSIC_DIRECTORY = "music"
+
 # Initialize TTS Engine
 engine = pyttsx3.init()
 
+# Initialize Pygame Mixer
+pygame.mixer.init()
+
 # Global flag
 is_listening = False
+is_music_playing = False
 
 # Commands Dictionary
 commands = {
@@ -23,9 +33,13 @@ commands = {
     "open google": "https://www.google.com",
     "open github": "https://www.github.com",
     "open netflix": "https://www.netflix.com",
-    "open youtube history": "https://www.youtube.com/feed/history",
 
-    # sfit pages
+    # Music commands
+    "open music": MUSIC_DIRECTORY,
+    "open music folder": MUSIC_DIRECTORY,
+    "stop music": "stop",
+
+    # SFIT pages
     "open homepage": "https://sfiterp.sfit.co.in:98/studentPortal.asp",
     "open sfit homepage": "https://sfiterp.sfit.co.in:98/studentPortal.asp",
     "open attendance": "https://sfiterp.sfit.co.in:98/StudPortal_Attendance.asp",
@@ -42,7 +56,7 @@ commands = {
     "open upload photo": "https://sfiterp.sfit.co.in:98/studportal_capture_photo.asp",
     "open elections": "https://sfiterp.sfit.co.in:98/studportal_election.asp",
 
-    # youtube pages
+    # YouTube pages
     "open youtube shorts": "https://www.youtube.com/shorts",
     "open youtube subscriptions": "https://www.youtube.com/feed/subscriptions",
     "open youtube history": "https://www.youtube.com/feed/history",
@@ -61,14 +75,100 @@ def speak(text):
     engine.runAndWait()
 
 
+# Music Player Functions
+def play_specific_song(song_name):
+    global is_music_playing
+    try:
+        # Get list of music files in the directory
+        music_files = [f for f in os.listdir(MUSIC_DIRECTORY) if f.endswith(('.mp3', '.wav', '.ogg', '.flac'))]
+
+        # Find the best matching song
+        def find_best_match(song_name, file_list):
+            # Remove file extensions for matching
+            file_names_without_ext = [os.path.splitext(f)[0].lower() for f in file_list]
+
+            # Use difflib to find the best match
+            matches = difflib.get_close_matches(song_name.lower(), file_names_without_ext, n=1, cutoff=0.6)
+
+            if matches:
+                # Find the full filename that matches the best match
+                matched_filename = [f for f in file_list if matches[0].lower() in f.lower()][0]
+                return matched_filename
+            return None
+
+        # Find the best matching song
+        matched_song = find_best_match(song_name, music_files)
+
+        if matched_song:
+            # Full path to the music file
+            music_path = os.path.join(MUSIC_DIRECTORY, matched_song)
+
+            # Load and play the music
+            pygame.mixer.music.load(music_path)
+            pygame.mixer.music.play()
+            is_music_playing = True
+
+            speak(f"Playing {matched_song}")
+        else:
+            speak(f"Could not find a song matching '{song_name}'")
+
+    except Exception as e:
+        speak(f"Error playing music: {str(e)}")
+
+
+def stop_music():
+    global is_music_playing
+    try:
+        pygame.mixer.music.stop()
+        is_music_playing = False
+        speak("Music stopped")
+    except Exception as e:
+        speak(f"Error stopping music: {str(e)}")
+
+
+def list_songs():
+    try:
+        music_files = [f for f in os.listdir(MUSIC_DIRECTORY) if f.endswith(('.mp3', '.wav', '.ogg', '.flac'))]
+        if music_files:
+            song_list = ", ".join([os.path.splitext(song)[0] for song in music_files])
+            speak(f"Available songs: {song_list}")
+        else:
+            speak("No music files found in the music directory")
+    except Exception as e:
+        speak(f"Error listing songs: {str(e)}")
+
+
 # Process Commands
 def process_command(command):
+    global is_music_playing
     command = command.lower()
+
+    # Special handling for music-specific commands
+    if command.startswith("play "):
+        song_name = command.replace("play ", "")
+        play_specific_song(song_name)
+        return
+
+    # List songs command
+    if command == "list songs":
+        list_songs()
+        return
+
+    # Rest of your existing command processing logic
     best_match, score = process.extractOne(command, commands.keys())
     if score > 80:  # Adjust threshold if needed
-        site_name = best_match.replace("open ", "").capitalize()
-        speak(f"Opening {site_name}")
-        webbrowser.open(commands[best_match])
+        if best_match in ["open music", "open music folder"]:
+            speak(f"Opening Music Folder")
+            try:
+                os.startfile(os.path.abspath(MUSIC_DIRECTORY))
+            except Exception as e:
+                speak(f"Error opening music folder: {str(e)}")
+        elif best_match == "stop music":
+            stop_music()
+        else:
+            site_name = best_match.replace("open ", "").capitalize()
+            speak(f"Opening {site_name}")
+            webbrowser.open(commands[best_match])
     else:
         speak("Command not recognized. Please try again.")
 
@@ -102,6 +202,7 @@ def listen():
 
 # Play Video Animation with preserved aspect ratio
 def play_video():
+    global is_music_playing
     cap = cv2.VideoCapture(VIDEO_PATH)
     if not cap.isOpened():
         status_label.config(text="Error: Could not open video file")
@@ -114,7 +215,7 @@ def play_video():
     original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     original_aspect_ratio = original_width / original_height
 
-    while is_listening and cap.isOpened():
+    while (is_listening or is_music_playing) and cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             # Loop back to the beginning when the video ends
@@ -158,7 +259,7 @@ def play_video():
         root.update_idletasks()
         time.sleep(1 / fps)
 
-    # Clear the video when not listening
+    # Clear the video when not listening or music stopped
     video_label.configure(image="")
     cap.release()
 
@@ -293,6 +394,14 @@ listen_button.bind("<Leave>", on_leave)
 # Keyboard bindings
 root.bind("<Escape>", exit_fullscreen)
 root.bind("<F11>", toggle_fullscreen)
+
+# Update commands dictionary
+commands.update({
+    "open music": MUSIC_DIRECTORY,
+    "open music folder": MUSIC_DIRECTORY,
+    "stop music": "stop",
+    "list songs": "list",
+})
 
 # Start GUI
 root.mainloop()
