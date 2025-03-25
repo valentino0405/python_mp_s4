@@ -10,6 +10,8 @@ from fuzzywuzzy import process
 import os
 import pygame
 import difflib
+import pyautogui
+import numpy as np
 
 # Video Path
 VIDEO_PATH = "nanimation.mp4"
@@ -23,9 +25,12 @@ engine = pyttsx3.init()
 # Initialize Pygame Mixer
 pygame.mixer.init()
 
-# Global flag
+# Global flags
 is_listening = False
 is_music_playing = False
+screen_recording_active = False
+screen_recording_thread = None
+screen_recording_filename = None
 
 # Commands Dictionary
 commands = {
@@ -38,6 +43,10 @@ commands = {
     "open music": MUSIC_DIRECTORY,
     "open music folder": MUSIC_DIRECTORY,
     "stop music": "stop",
+
+    # Screen recording commands
+    "start recording": "start recording",
+    "stop recording": "stop recording",
 
     # SFIT pages
     "open homepage": "https://sfiterp.sfit.co.in:98/studentPortal.asp",
@@ -65,6 +74,72 @@ commands = {
     "open youtube liked videos": "https://www.youtube.com/playlist?list=LL",
     "open youtube downloads": "https://www.youtube.com/feed/downloads",
 }
+
+
+# Screen Recording Functions
+def start_screen_recording():
+    global screen_recording_active, screen_recording_thread, screen_recording_filename
+    try:
+        # Create Videos directory if it doesn't exist
+        os.makedirs("Videos", exist_ok=True)
+        # Generate unique filename with timestamp
+        screen_recording_filename = f"Videos/screen_recording_{int(time.time())}.mp4"
+        # Screen dimensions
+        screen_size = pyautogui.size()
+        # Video writer setup
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(screen_recording_filename, fourcc, 20.0,
+                              (screen_size.width, screen_size.height))
+        # Set global flag
+        screen_recording_active = True
+
+        def record_screen():
+            nonlocal out
+            while screen_recording_active:
+                # Capture screen
+                screenshot = pyautogui.screenshot()
+                frame = np.array(screenshot)
+
+                # Convert RGB to BGR (OpenCV requirement)
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+                # Write the frame
+                out.write(frame)
+
+                # Control frame rate (20 FPS)
+                time.sleep(1 / 20)
+
+            # Release the video writer when recording stops
+            out.release()
+
+        # Start recording in a separate thread
+        screen_recording_thread = threading.Thread(target=record_screen)
+        screen_recording_thread.start()
+
+        speak("Screen recording started")
+        return screen_recording_filename
+
+    except Exception as e:
+        speak(f"Error starting screen recording: {str(e)}")
+        return None
+
+
+def stop_screen_recording():
+    global screen_recording_active, screen_recording_thread, screen_recording_filename
+
+    if not screen_recording_active:
+        speak("No active screen recording to stop")
+        return
+
+    # Stop the recording
+    screen_recording_active = False
+
+    # Wait for the recording thread to finish
+    if screen_recording_thread:
+        screen_recording_thread.join()
+
+    speak(f"Screen recording stopped. Saved to {screen_recording_filename}")
+    return screen_recording_filename
 
 
 # Speak Function
@@ -140,8 +215,17 @@ def list_songs():
 
 # Process Commands
 def process_command(command):
-    global is_music_playing
+    global is_music_playing, screen_recording_active
     command = command.lower()
+
+    # Screen recording commands
+    if command == "start recording":
+        start_screen_recording()
+        return
+
+    if command == "stop recording":
+        stop_screen_recording()
+        return
 
     # Special handling for music-specific commands
     if command.startswith("play "):
@@ -394,14 +478,6 @@ listen_button.bind("<Leave>", on_leave)
 # Keyboard bindings
 root.bind("<Escape>", exit_fullscreen)
 root.bind("<F11>", toggle_fullscreen)
-
-# Update commands dictionary
-commands.update({
-    "open music": MUSIC_DIRECTORY,
-    "open music folder": MUSIC_DIRECTORY,
-    "stop music": "stop",
-    "list songs": "list",
-})
 
 # Start GUI
 root.mainloop()
