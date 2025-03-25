@@ -12,6 +12,8 @@ import pygame
 import difflib
 import pyautogui
 import numpy as np
+from comtypes import CLSCTX_ALL
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 # Video Path
 VIDEO_PATH = "nanimation.mp4"
@@ -34,6 +36,7 @@ screen_recording_filename = None
 
 # Commands Dictionary
 commands = {
+    # Existing web commands
     "open youtube": "https://www.youtube.com",
     "open google": "https://www.google.com",
     "open github": "https://www.github.com",
@@ -47,6 +50,11 @@ commands = {
     # Screen recording commands
     "start recording": "start recording",
     "stop recording": "stop recording",
+
+    # New volume and camera commands
+    "set volume": "set volume",
+    "open camera": "open camera",
+    "capture image": "capture image",
 
     # SFIT pages
     "open homepage": "https://sfiterp.sfit.co.in:98/studentPortal.asp",
@@ -140,6 +148,79 @@ def stop_screen_recording():
 
     speak(f"Screen recording stopped. Saved to {screen_recording_filename}")
     return screen_recording_filename
+
+
+# New Volume Control Function
+def change_volume(volume_level):
+    """
+    Change system volume on Windows with precise control
+    """
+    try:
+        # Get default audio device
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(
+            IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume = interface.QueryInterface(IAudioEndpointVolume)
+
+        # Ensure volume is within 0-100 range
+        volume_level = max(0, min(volume_level, 100))
+
+        # Set volume directly using SetMasterVolumeLevelScalar
+        volume.SetMasterVolumeLevelScalar(volume_level / 100.0, None)
+        speak(f"Volume set to {volume_level}%")
+
+    except Exception as e:
+        speak(f"Error changing volume: {str(e)}")
+
+
+# New Camera Capture Function
+def capture_camera():
+    """
+    Capture and save an image from the camera
+    """
+    try:
+        # Create directory to save pictures if it doesn't exist
+        if not os.path.exists('captured_images'):
+            os.makedirs('captured_images')
+
+        # Open the default camera
+        cap = cv2.VideoCapture(0)
+
+        if not cap.isOpened():
+            speak("Error: Could not open camera.")
+            return
+
+        # Capture a single frame
+        ret, frame = cap.read()
+        cap.release()
+
+        if not ret:
+            speak("Failed to capture image")
+            return
+
+        # Generate unique filename
+        picture_count = len(os.listdir('captured_images')) + 1
+        filename = f'captured_images/picture_{picture_count}.jpg'
+
+        # Save the image
+        cv2.imwrite(filename, frame)
+        speak(f"Image captured and saved as {filename}")
+
+        # Display the captured image in the video frame
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        captured_image = Image.fromarray(frame_rgb)
+
+        # Resize image to fit video frame while maintaining aspect ratio
+        video_width = video_frame.winfo_width()
+        video_height = video_frame.winfo_height()
+        captured_image.thumbnail((video_width, video_height), Image.LANCZOS)
+
+        imgtk = ImageTk.PhotoImage(image=captured_image)
+        video_label.imgtk = imgtk
+        video_label.configure(image=imgtk)
+
+    except Exception as e:
+        speak(f"Error in camera capture: {str(e)}")
 
 
 # Speak Function
@@ -238,7 +319,22 @@ def process_command(command):
         list_songs()
         return
 
-    # Rest of your existing command processing logic
+    # Volume Control Command
+    if command.startswith("set volume"):
+        try:
+            # Extract volume level
+            volume_level = int(command.split()[-1])
+            change_volume(volume_level)
+        except (ValueError, IndexError):
+            speak("Please specify a volume level between 0 and 100")
+        return
+
+    # Camera Commands
+    if command in ["open camera", "capture image"]:
+        capture_camera()
+        return
+
+    # Rest of the existing command processing logic
     best_match, score = process.extractOne(command, commands.keys())
     if score > 80:  # Adjust threshold if needed
         if best_match in ["open music", "open music folder"]:
@@ -480,4 +576,5 @@ root.bind("<Escape>", exit_fullscreen)
 root.bind("<F11>", toggle_fullscreen)
 
 # Start GUI
-root.mainloop()
+if __name__ == "__main__":
+    root.mainloop()
