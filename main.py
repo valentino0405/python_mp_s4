@@ -1,5 +1,4 @@
 # main.py
-import tkinter as tk
 from gui import create_gui
 from voice_commands import start_voice_assistant, listen
 

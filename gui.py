@@ -1,9 +1,5 @@
 # gui.py
 import tkinter as tk
-import cv2
-from PIL import Image, ImageTk
-import threading
-import time
 
 def create_gui(start_voice_assistant_func, listen_func):
     root = tk.Tk()

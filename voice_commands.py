@@ -1,5 +1,4 @@
 #voice_commands.py
-import tkinter as tk
 import speech_recognition as sr
 import pyttsx3
 import webbrowser
@@ -9,11 +8,6 @@ from PIL import Image, ImageTk
 import time
 import os
 import pygame
-import difflib
-import pyautogui
-import numpy as np
-from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from fuzzywuzzy import process
 from utils import (
     change_volume,
