@@ -1,3 +1,4 @@
+
 import tkinter as tk
 import speech_recognition as sr
 import pyttsx3
@@ -578,3 +579,4 @@ root.bind("<F11>", toggle_fullscreen)
 # Start GUI
 if __name__ == "__main__":
     root.mainloop()
+
